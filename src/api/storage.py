@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
-from datetime import datetime
 from pathlib import Path
 from typing import Iterable
 from uuid import uuid4
@@ -13,9 +12,11 @@ from .models import RenderAsset, RenderJob
 class RenderRepository:
     def __init__(self, base_path: Path | None = None) -> None:
         if base_path is None:
-            base_path = Path(__file__).resolve().parents[2] / "data" / "renders"
-        self.base_path = base_path
-        self.base_path.mkdir(parents=True, exist_ok=True)
+            base_path = Path(__file__).resolve().parents[2] / "data"
+        self.store_path = _resolve_store_path(base_path, "renders.json")
+        self.store_path.parent.mkdir(parents=True, exist_ok=True)
+        self._cache: dict[str, dict[str, object]] = {}
+        self._charger()
 
     def creer(self, *, type_rendu: str, scene: dict[str, object], prompt: dict[str, object],
               configuration: dict[str, object], modele: str) -> RenderJob:
@@ -33,46 +34,44 @@ class RenderRepository:
         return rendu
 
     def mettre_a_jour(self, rendu: RenderJob) -> RenderJob:
-        if not self._chemin_rendu(rendu.identifiant).exists():
+        if rendu.identifiant not in self._cache:
             raise FileNotFoundError(f"Rendu introuvable: {rendu.identifiant}")
         self._enregistrer(rendu)
         return rendu
 
     def lire(self, identifiant: str) -> RenderJob:
-        chemin = self._chemin_latest(identifiant)
-        if not chemin.exists():
+        payload = self._cache.get(identifiant)
+        if payload is None:
             raise FileNotFoundError(f"Rendu introuvable: {identifiant}")
-        return self._charger_depuis_fichier(chemin)
+        return _rendu_from_dict(payload)
 
     def lister(self) -> Iterable[RenderJob]:
-        for dossier in sorted(self.base_path.iterdir()):
-            if dossier.is_dir():
-                latest = dossier / "latest.json"
-                if latest.exists():
-                    yield self._charger_depuis_fichier(latest)
+        for payload in self._cache.values():
+            yield _rendu_from_dict(payload)
 
     def _enregistrer(self, rendu: RenderJob) -> None:
-        dossier = self._chemin_rendu(rendu.identifiant)
-        versions = dossier / "versions"
-        versions.mkdir(parents=True, exist_ok=True)
-
-        horodatage = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-        version_path = versions / f"{horodatage}.json"
-        latest_path = dossier / "latest.json"
-
         payload = _rendu_to_dict(rendu)
-        version_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        latest_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        self._cache[rendu.identifiant] = payload
+        self._sauvegarder()
 
-    def _chemin_rendu(self, identifiant: str) -> Path:
-        return self.base_path / identifiant
+    def _charger(self) -> None:
+        if not self.store_path.exists():
+            self._cache = {}
+            return
+        contenu = json.loads(self.store_path.read_text(encoding="utf-8"))
+        if isinstance(contenu, dict):
+            items = contenu.get("items", contenu)
+            if isinstance(items, dict):
+                self._cache = dict(items)
+                return
+        self._cache = {}
 
-    def _chemin_latest(self, identifiant: str) -> Path:
-        return self._chemin_rendu(identifiant) / "latest.json"
-
-    def _charger_depuis_fichier(self, chemin: Path) -> RenderJob:
-        contenu = json.loads(chemin.read_text(encoding="utf-8"))
-        return _rendu_from_dict(contenu)
+    def _sauvegarder(self) -> None:
+        payload = {"items": self._cache}
+        self.store_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
 
 def _rendu_to_dict(rendu: RenderJob) -> dict[str, object]:
@@ -94,3 +93,9 @@ def _rendu_from_dict(data: dict[str, object]) -> RenderJob:
         cree_le=data.get("cree_le", datetime.utcnow().isoformat()),
         termine_le=data.get("termine_le"),
     )
+
+
+def _resolve_store_path(base_path: Path, filename: str) -> Path:
+    if base_path.suffix == ".json":
+        return base_path
+    return base_path / filename
