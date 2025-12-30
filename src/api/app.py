@@ -354,11 +354,11 @@ class RenderRequest(BaseModel):
 
 class RenderResponse(BaseModel):
     identifiant: str
-    type_rendu: str
+    type: str
     scene: dict[str, Any]
     prompt: dict[str, Any]
     configuration: dict[str, Any]
-    modele: str
+    model_name: str
     statut: str
     asset: dict[str, Any] | None
     cree_le: str
@@ -899,11 +899,11 @@ def _render_to_response(rendu: RenderJob) -> RenderResponse:
     asset_payload = asdict(rendu.asset) if rendu.asset else None
     return RenderResponse(
         identifiant=rendu.identifiant,
-        type_rendu=rendu.type_rendu,
+        type=rendu.type_rendu,
         scene=dict(rendu.scene),
         prompt=dict(rendu.prompt),
         configuration=dict(rendu.configuration),
-        modele=rendu.modele,
+        model_name=rendu.modele,
         statut=rendu.statut,
         asset=asset_payload,
         cree_le=rendu.cree_le,
