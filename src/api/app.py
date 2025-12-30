@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import asdict
+import os
 from pathlib import Path
 from typing import Any, Literal
 
@@ -27,9 +28,15 @@ from ..media_generation.models import (
     VideoGenerationConfig,
 )
 from ..media_generation.orchestrator import MediaGenerationOrchestrator
+from ..media_generation.local import CommandTemplate, LocalImageCommandModel, LocalVideoCommandModel
 
 from .models import RenderAsset, RenderJob
 from .storage import RenderRepository
+
+DEFAULT_MODEL_NAME = os.getenv("SEIDRA_DEFAULT_MODEL_NAME", "stub")
+LOCAL_IMAGE_COMMAND = os.getenv("SEIDRA_LOCAL_IMAGE_COMMAND")
+LOCAL_VIDEO_COMMAND = os.getenv("SEIDRA_LOCAL_VIDEO_COMMAND")
+ARTIFACTS_DIR = Path(os.getenv("SEIDRA_ARTIFACTS_DIR", "data/artifacts"))
 
 
 class CharacterProfilePayload(BaseModel):
@@ -126,7 +133,7 @@ class RenderRequest(BaseModel):
     prompt: PromptPayload
     image_config: ImageConfigPayload | None = None
     video_config: VideoConfigPayload | None = None
-    model_name: str = "stub"
+    model_name: str = DEFAULT_MODEL_NAME
 
 
 class RenderResponse(BaseModel):
@@ -217,9 +224,25 @@ character_repo = CharacterRepository()
 render_repo = RenderRepository()
 
 orchestrator = MediaGenerationOrchestrator(prompt_renderer=BasicPromptRenderer())
-asset_base_path = Path(__file__).resolve().parents[2] / "data" / "artifacts"
+asset_base_path = Path(__file__).resolve().parents[2] / ARTIFACTS_DIR
 orchestrator.register_image_model("stub", StubImageModel(asset_base_path))
 orchestrator.register_video_model("stub", StubVideoModel(asset_base_path))
+if LOCAL_IMAGE_COMMAND:
+    orchestrator.register_image_model(
+        "local",
+        LocalImageCommandModel(
+            asset_base_path,
+            CommandTemplate(LOCAL_IMAGE_COMMAND),
+        ),
+    )
+if LOCAL_VIDEO_COMMAND:
+    orchestrator.register_video_model(
+        "local",
+        LocalVideoCommandModel(
+            asset_base_path,
+            CommandTemplate(LOCAL_VIDEO_COMMAND),
+        ),
+    )
 
 
 @app.post("/characters", status_code=201)
