@@ -27,6 +27,28 @@ uvicorn src.api.app:app --reload
 L'API est disponible sur `http://127.0.0.1:8000` et la documentation interactive sur
 `http://127.0.0.1:8000/docs`.
 
+### Mode 100 % local (CPU/GPU)
+
+Le backend peut exécuter des commandes locales pour générer des images/vidéos sans
+appels externes. Définissez les variables d'environnement suivantes :
+
+- `SEIDRA_LOCAL_IMAGE_COMMAND` : commande shell pour la génération d'images.
+- `SEIDRA_LOCAL_VIDEO_COMMAND` : commande shell pour la génération de vidéos.
+- `SEIDRA_DEFAULT_MODEL_NAME` : modèle par défaut (`local` recommandé).
+- `SEIDRA_ARTIFACTS_DIR` : dossier de sortie des artefacts (optionnel).
+
+La commande peut utiliser les variables suivantes :
+`{prompt}`, `{output_path}`, `{width}`, `{height}`, `{steps}`, `{guidance_scale}`,
+`{seed}`, `{duration_seconds}`, `{fps}`, `{scene_identifier}`, `{style_name}`,
+`{style_tags}`.
+
+Exemple (image) :
+
+```bash
+export SEIDRA_LOCAL_IMAGE_COMMAND='python ./scripts/generate_image.py --prompt "{prompt}" --out "{output_path}" --width {width} --height {height} --steps {steps} --guidance {guidance_scale}'
+export SEIDRA_DEFAULT_MODEL_NAME=local
+```
+
 ## Exemples d'appels
 
 ### Créer un personnage
