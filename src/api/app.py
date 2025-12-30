@@ -8,7 +8,7 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..characters.models import (
     Character,
@@ -54,10 +54,26 @@ SCENARIOS_STORE_PATH = Path(os.getenv("SEIDRA_SCENARIOS_STORE", "data/scenarios.
 
 
 class CharacterProfilePayload(BaseModel):
-    nom: str
-    description: str
+    nom: str = Field(..., min_length=1)
+    description: str = Field(..., min_length=1)
     voix_narrative: str | None = None
     metadonnees: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("nom", "description")
+    @classmethod
+    def valider_champs_requis(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("doit être renseigné")
+        return value
+
+    @field_validator("voix_narrative")
+    @classmethod
+    def valider_voix_narrative(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        if not value.strip():
+            raise ValueError("doit être renseigné si fourni")
+        return value
 
 
 class CharacterTraitsPayload(BaseModel):
@@ -67,9 +83,16 @@ class CharacterTraitsPayload(BaseModel):
 
 
 class CharacterHistoryEntryPayload(BaseModel):
-    titre: str
-    contenu: str
+    titre: str = Field(..., min_length=1)
+    contenu: str = Field(..., min_length=1)
     date: str | None = None
+
+    @field_validator("titre", "contenu")
+    @classmethod
+    def valider_champs_requis(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("doit être renseigné")
+        return value
 
 
 class CharacterHistoryPayload(BaseModel):
@@ -77,10 +100,17 @@ class CharacterHistoryPayload(BaseModel):
 
 
 class CharacterStatePayload(BaseModel):
-    statut: str
+    statut: str = Field(..., min_length=1)
     localisation: str | None = None
     etat_emotionnel: str | None = None
     variables: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("statut")
+    @classmethod
+    def valider_statut(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("doit être renseigné")
+        return value
 
 
 class CharacterCreateRequest(BaseModel):
@@ -98,28 +128,56 @@ class CharacterUpdateRequest(BaseModel):
 
 
 class MediaCharacterProfilePayload(BaseModel):
-    identifier: str
-    name: str
-    description: str
+    identifier: str = Field(..., min_length=1)
+    name: str = Field(..., min_length=1)
+    description: str = Field(..., min_length=1)
     traits: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    @field_validator("identifier", "name", "description")
+    @classmethod
+    def valider_champs_requis(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("doit être renseigné")
+        return value
+
 
 class PromptPayload(BaseModel):
-    template: str
+    template: str = Field(..., min_length=1)
     variables: dict[str, Any] = Field(default_factory=dict)
     version: str | None = None
 
+    @field_validator("template")
+    @classmethod
+    def valider_template(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("doit être renseigné")
+        return value
+
 
 class PromptCreateRequest(BaseModel):
-    nom: str
-    template: str
+    nom: str = Field(..., min_length=1)
+    template: str = Field(..., min_length=1)
     variables: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("nom", "template")
+    @classmethod
+    def valider_champs_requis(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("doit être renseigné")
+        return value
 
 
 class PromptUpdateRequest(BaseModel):
-    template: str
+    template: str = Field(..., min_length=1)
     variables: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("template")
+    @classmethod
+    def valider_template(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("doit être renseigné")
+        return value
 
 
 class PromptExecutionRequest(BaseModel):
@@ -129,68 +187,124 @@ class PromptExecutionRequest(BaseModel):
 
 class SceneScenarioPayload(BaseModel):
     identifiant: str | None = None
-    titre: str
-    resume: str
+    titre: str = Field(..., min_length=1)
+    resume: str = Field(..., min_length=1)
     personnages_ids: list[str] = Field(default_factory=list)
     metadonnees: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("titre", "resume")
+    @classmethod
+    def valider_champs_requis(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("doit être renseigné")
+        return value
 
 
 class ActePayload(BaseModel):
     identifiant: str | None = None
-    titre: str
+    titre: str = Field(..., min_length=1)
     scenes: list[SceneScenarioPayload] = Field(default_factory=list)
     metadonnees: dict[str, Any] = Field(default_factory=dict)
 
+    @field_validator("titre")
+    @classmethod
+    def valider_titre(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("doit être renseigné")
+        return value
+
 
 class ScenarioCreateRequest(BaseModel):
-    titre: str
+    titre: str = Field(..., min_length=1)
     description: str | None = None
     actes: list[ActePayload] = Field(default_factory=list)
+
+    @field_validator("titre")
+    @classmethod
+    def valider_titre(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("doit être renseigné")
+        return value
 
 
 class ScenarioUpdateRequest(BaseModel):
-    titre: str
+    titre: str = Field(..., min_length=1)
     description: str | None = None
     actes: list[ActePayload] = Field(default_factory=list)
 
+    @field_validator("titre")
+    @classmethod
+    def valider_titre(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("doit être renseigné")
+        return value
+
 
 class StyleProfilePayload(BaseModel):
-    name: str
+    name: str = Field(..., min_length=1)
     description: str | None = None
     tags: list[str] = Field(default_factory=list)
 
+    @field_validator("name")
+    @classmethod
+    def valider_nom(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("doit être renseigné")
+        return value
+
 
 class MediaResolutionPayload(BaseModel):
-    width: int
-    height: int
+    width: int = Field(..., ge=1)
+    height: int = Field(..., ge=1)
 
 
 class ScenePayload(BaseModel):
-    identifier: str
-    summary: str
+    identifier: str = Field(..., min_length=1)
+    summary: str = Field(..., min_length=1)
     characters: list[MediaCharacterProfilePayload]
     location: str | None = None
     mood: str | None = None
+
+    @field_validator("identifier", "summary")
+    @classmethod
+    def valider_champs_requis(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("doit être renseigné")
+        return value
 
 
 class ImageConfigPayload(BaseModel):
     resolution: MediaResolutionPayload
     style: StyleProfilePayload | None = None
-    steps: int = 30
-    guidance_scale: float = 7.5
+    steps: int = Field(30, ge=1)
+    guidance_scale: float = Field(7.5, gt=0)
     seed: int | None = None
-    output_format: str = "png"
+    output_format: str = Field("png", min_length=1)
     max_size_bytes: int | None = None
+
+    @field_validator("output_format")
+    @classmethod
+    def valider_output_format(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("doit être renseigné")
+        return value
 
 
 class VideoConfigPayload(BaseModel):
     resolution: MediaResolutionPayload
-    duration_seconds: float
-    fps: int = 24
+    duration_seconds: float = Field(..., gt=0)
+    fps: int = Field(24, ge=1)
     style: StyleProfilePayload | None = None
     seed: int | None = None
-    output_format: str = "mp4"
+    output_format: str = Field("mp4", min_length=1)
     max_size_bytes: int | None = None
+
+    @field_validator("output_format")
+    @classmethod
+    def valider_output_format(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("doit être renseigné")
+        return value
 
 
 class RenderRequest(BaseModel):
@@ -200,6 +314,27 @@ class RenderRequest(BaseModel):
     image_config: ImageConfigPayload | None = None
     video_config: VideoConfigPayload | None = None
     model_name: str = DEFAULT_MODEL_NAME
+
+    @field_validator("model_name")
+    @classmethod
+    def valider_model_name(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("doit être renseigné")
+        return value
+
+    @model_validator(mode="after")
+    def valider_configuration(self) -> "RenderRequest":
+        if self.type == "image":
+            if self.image_config is None:
+                raise ValueError("image_config est obligatoire pour un rendu image")
+            if self.video_config is not None:
+                raise ValueError("video_config doit être omis pour un rendu image")
+        if self.type == "video":
+            if self.video_config is None:
+                raise ValueError("video_config est obligatoire pour un rendu vidéo")
+            if self.image_config is not None:
+                raise ValueError("image_config doit être omis pour un rendu vidéo")
+        return self
 
 
 class RenderResponse(BaseModel):
