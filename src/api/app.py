@@ -5,6 +5,7 @@ from dataclasses import asdict
 import os
 from pathlib import Path
 from typing import Any, Literal
+from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
@@ -30,6 +31,8 @@ from ..media_generation.models import (
 from ..media_generation.orchestrator import MediaGenerationOrchestrator
 from ..media_generation.local import CommandTemplate, LocalImageCommandModel, LocalVideoCommandModel
 from ..prompts.storage import PromptRepository
+from ..scenarios.models import Acte, Scene, Scenario
+from ..scenarios.storage import ScenarioRepository
 
 from .models import RenderAsset, RenderJob
 from .storage import RenderRepository
@@ -41,6 +44,7 @@ ARTIFACTS_DIR = Path(os.getenv("SEIDRA_ARTIFACTS_DIR", "data/artifacts"))
 CHARACTERS_STORE_PATH = Path(os.getenv("SEIDRA_CHARACTERS_STORE", "data/characters.json"))
 RENDERS_STORE_PATH = Path(os.getenv("SEIDRA_RENDERS_STORE", "data/renders.json"))
 PROMPTS_STORE_PATH = Path(os.getenv("SEIDRA_PROMPTS_STORE", "data/prompts.json"))
+SCENARIOS_STORE_PATH = Path(os.getenv("SEIDRA_SCENARIOS_STORE", "data/scenarios.json"))
 
 
 class CharacterProfilePayload(BaseModel):
@@ -108,6 +112,33 @@ class PromptUpdateRequest(BaseModel):
 class PromptExecutionRequest(BaseModel):
     version: int | None = None
     contexte: dict[str, Any] = Field(default_factory=dict)
+
+
+class SceneScenarioPayload(BaseModel):
+    identifiant: str | None = None
+    titre: str
+    resume: str
+    personnages_ids: list[str] = Field(default_factory=list)
+    metadonnees: dict[str, Any] = Field(default_factory=dict)
+
+
+class ActePayload(BaseModel):
+    identifiant: str | None = None
+    titre: str
+    scenes: list[SceneScenarioPayload] = Field(default_factory=list)
+    metadonnees: dict[str, Any] = Field(default_factory=dict)
+
+
+class ScenarioCreateRequest(BaseModel):
+    titre: str
+    description: str | None = None
+    actes: list[ActePayload] = Field(default_factory=list)
+
+
+class ScenarioUpdateRequest(BaseModel):
+    titre: str
+    description: str | None = None
+    actes: list[ActePayload] = Field(default_factory=list)
 
 
 class StyleProfilePayload(BaseModel):
@@ -243,6 +274,7 @@ app = FastAPI(title="SeidraLocal API", version="0.1.0")
 character_repo = CharacterRepository(CHARACTERS_STORE_PATH)
 render_repo = RenderRepository(RENDERS_STORE_PATH)
 prompt_repo = PromptRepository(PROMPTS_STORE_PATH)
+scenario_repo = ScenarioRepository(SCENARIOS_STORE_PATH)
 
 orchestrator = MediaGenerationOrchestrator(prompt_renderer=BasicPromptRenderer())
 asset_base_path = Path(__file__).resolve().parents[2] / ARTIFACTS_DIR
@@ -364,6 +396,52 @@ def enregistrer_execution_prompt(
     return asdict(execution)
 
 
+@app.post("/scenarios", status_code=201)
+def creer_scenario(payload: ScenarioCreateRequest) -> dict[str, Any]:
+    scenario = Scenario(
+        identifiant="temp",
+        titre=payload.titre,
+        description=payload.description,
+        actes=_build_actes(payload.actes),
+    )
+    _verifier_coherence_scenario(scenario)
+    try:
+        scenario = scenario_repo.creer(
+            scenario.titre,
+            description=scenario.description,
+            actes=scenario.actes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return asdict(scenario)
+
+
+@app.get("/scenarios")
+def lister_scenarios() -> list[dict[str, Any]]:
+    return [asdict(scenario) for scenario in scenario_repo.lister()]
+
+
+@app.put("/scenarios/{identifiant}")
+def mettre_a_jour_scenario(
+    identifiant: str,
+    payload: ScenarioUpdateRequest,
+) -> dict[str, Any]:
+    scenario = Scenario(
+        identifiant=identifiant,
+        titre=payload.titre,
+        description=payload.description,
+        actes=_build_actes(payload.actes),
+    )
+    _verifier_coherence_scenario(scenario)
+    try:
+        scenario = scenario_repo.mettre_a_jour(scenario)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return asdict(scenario)
+
+
 @app.post("/renders", response_model=RenderResponse, status_code=201)
 def lancer_rendu(payload: RenderRequest) -> RenderResponse:
     if payload.type == "image":
@@ -443,6 +521,31 @@ def _build_scene(payload: ScenePayload) -> SceneSpec:
     )
 
 
+def _build_actes(payloads: list[ActePayload]) -> list[Acte]:
+    actes = []
+    for acte_payload in payloads:
+        scenes = []
+        for scene_payload in acte_payload.scenes:
+            scenes.append(
+                Scene(
+                    identifiant=scene_payload.identifiant or str(uuid4()),
+                    titre=scene_payload.titre,
+                    resume=scene_payload.resume,
+                    personnages_ids=list(scene_payload.personnages_ids),
+                    metadonnees=dict(scene_payload.metadonnees),
+                )
+            )
+        actes.append(
+            Acte(
+                identifiant=acte_payload.identifiant or str(uuid4()),
+                titre=acte_payload.titre,
+                scenes=scenes,
+                metadonnees=dict(acte_payload.metadonnees),
+            )
+        )
+    return actes
+
+
 def _build_prompt(payload: PromptPayload) -> PromptSpec:
     return PromptSpec(**payload.model_dump())
 
@@ -493,3 +596,19 @@ def _render_to_response(rendu: RenderJob) -> RenderResponse:
         cree_le=rendu.cree_le,
         termine_le=rendu.termine_le,
     )
+
+
+def _verifier_coherence_scenario(scenario: Scenario) -> None:
+    for acte in scenario.actes:
+        for scene in acte.scenes:
+            for identifiant in scene.personnages_ids:
+                try:
+                    character_repo.lire(identifiant)
+                except FileNotFoundError as exc:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            "Personnage introuvable pour la scène "
+                            f"{scene.identifiant}: {identifiant}"
+                        ),
+                    ) from exc
