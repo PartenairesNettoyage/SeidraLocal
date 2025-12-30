@@ -83,6 +83,53 @@ curl -X POST http://127.0.0.1:8000/characters \
 curl http://127.0.0.1:8000/characters
 ```
 
+### Mettre à jour un personnage (remplacement)
+
+```bash
+curl -X PUT http://127.0.0.1:8000/characters/<identifiant> \
+  -H "Content-Type: application/json" \
+  -d ' {
+    "profil": {
+      "nom": "Lyra",
+      "description": "Exploratrice interstellaire",
+      "voix_narrative": "Voix posée et curieuse",
+      "metadonnees": {"origine": "Colonie Aurore"}
+    },
+    "traits": {
+      "traits": ["audacieuse", "stratégique"],
+      "relations": ["Capitaine Nova"],
+      "tags": ["protagoniste"]
+    },
+    "etat": {
+      "statut": "en mission",
+      "localisation": "Orbites de Kepler-62",
+      "etat_emotionnel": "déterminée",
+      "variables": {"energie": 82}
+    }
+  }'
+```
+
+### Mettre à jour un personnage (partiel)
+
+```bash
+curl -X PATCH http://127.0.0.1:8000/characters/<identifiant> \
+  -H "Content-Type: application/json" \
+  -d ' {
+    "etat": {
+      "statut": "au repos",
+      "localisation": "Base Aurore",
+      "etat_emotionnel": "soulagée",
+      "variables": {"energie": 95}
+    }
+  }'
+```
+
+### Supprimer un personnage
+
+```bash
+curl -X DELETE http://127.0.0.1:8000/characters/<identifiant>
+```
+
 ### Lancer un rendu image
 
 ```bash

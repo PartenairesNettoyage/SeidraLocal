@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from ..characters.models import (
+    Character,
     CharacterHistory,
     CharacterHistoryEntry,
     CharacterProfile,
@@ -79,6 +80,13 @@ class CharacterStatePayload(BaseModel):
 
 class CharacterCreateRequest(BaseModel):
     profil: CharacterProfilePayload
+    traits: CharacterTraitsPayload | None = None
+    historique: CharacterHistoryPayload | None = None
+    etat: CharacterStatePayload | None = None
+
+
+class CharacterUpdateRequest(BaseModel):
+    profil: CharacterProfilePayload | None = None
     traits: CharacterTraitsPayload | None = None
     historique: CharacterHistoryPayload | None = None
     etat: CharacterStatePayload | None = None
@@ -302,16 +310,7 @@ if LOCAL_VIDEO_COMMAND:
 def creer_personnage(payload: CharacterCreateRequest) -> dict[str, Any]:
     profil = CharacterProfile(**payload.profil.model_dump())
     traits = CharacterTraits(**payload.traits.model_dump()) if payload.traits else None
-    historique = (
-        CharacterHistory(
-            evenements=[
-                CharacterHistoryEntry(**entry.model_dump())
-                for entry in payload.historique.evenements
-            ]
-        )
-        if payload.historique
-        else None
-    )
+    historique = _build_character_history(payload.historique) if payload.historique else None
     etat = CharacterState(**payload.etat.model_dump()) if payload.etat else None
     character = character_repo.creer(
         profil,
@@ -334,6 +333,75 @@ def lire_personnage(identifiant: str) -> dict[str, Any]:
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return _character_to_payload(character)
+
+
+@app.put("/characters/{identifiant}")
+def remplacer_personnage(identifiant: str, payload: CharacterCreateRequest) -> dict[str, Any]:
+    try:
+        character = character_repo.lire(identifiant)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    character_mis_a_jour = Character(
+        identifiant=identifiant,
+        profil=CharacterProfile(**payload.profil.model_dump()),
+        traits=CharacterTraits(**payload.traits.model_dump()) if payload.traits else CharacterTraits(),
+        historique=_build_character_history(payload.historique),
+        etat=CharacterState(**payload.etat.model_dump()) if payload.etat else None,
+        cree_le=character.cree_le,
+        modifie_le=character.modifie_le,
+        version_schema=character.version_schema,
+    )
+    character_mis_a_jour = character_repo.mettre_a_jour(character_mis_a_jour)
+    return _character_to_payload(character_mis_a_jour)
+
+
+@app.patch("/characters/{identifiant}")
+def mettre_a_jour_personnage(
+    identifiant: str,
+    payload: CharacterUpdateRequest,
+) -> dict[str, Any]:
+    try:
+        character = character_repo.lire(identifiant)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    character_mis_a_jour = Character(
+        identifiant=identifiant,
+        profil=(
+            CharacterProfile(**payload.profil.model_dump())
+            if payload.profil
+            else character.profil
+        ),
+        traits=(
+            CharacterTraits(**payload.traits.model_dump())
+            if payload.traits
+            else character.traits
+        ),
+        historique=(
+            _build_character_history(payload.historique)
+            if payload.historique
+            else character.historique
+        ),
+        etat=(
+            CharacterState(**payload.etat.model_dump())
+            if payload.etat
+            else character.etat
+        ),
+        cree_le=character.cree_le,
+        modifie_le=character.modifie_le,
+        version_schema=character.version_schema,
+    )
+    character_mis_a_jour = character_repo.mettre_a_jour(character_mis_a_jour)
+    return _character_to_payload(character_mis_a_jour)
+
+
+@app.delete("/characters/{identifiant}", status_code=204)
+def supprimer_personnage(identifiant: str) -> None:
+    try:
+        character_repo.supprimer(identifiant)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.post("/prompts", status_code=201)
@@ -506,6 +574,14 @@ def _character_to_payload(character: Any) -> dict[str, Any]:
 
 def _prompt_to_payload(prompt: Any) -> dict[str, Any]:
     return asdict(prompt)
+
+
+def _build_character_history(payload: CharacterHistoryPayload | None) -> CharacterHistory:
+    if payload is None:
+        return CharacterHistory()
+    return CharacterHistory(
+        evenements=[CharacterHistoryEntry(**entry.model_dump()) for entry in payload.evenements]
+    )
 
 
 def _build_scene(payload: ScenePayload) -> SceneSpec:
