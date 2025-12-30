@@ -7,7 +7,15 @@ from dataclasses import dataclass
 from pathlib import Path
 import subprocess
 
-from .models import ImageGenerationConfig, MediaAsset, SceneSpec, VideoGenerationConfig
+from .models import (
+    ImageGenerationConfig,
+    MediaAsset,
+    SceneSpec,
+    VideoGenerationConfig,
+    get_image_mime_type,
+    get_video_mime_type,
+    validate_max_size,
+)
 
 
 @dataclass(frozen=True)
@@ -53,10 +61,17 @@ class LocalImageCommandModel:
         )
         _run_command(command)
         _ensure_output_exists(output_path, command)
+        size_bytes = output_path.stat().st_size
+        validate_max_size(size_bytes, config.max_size_bytes, media_label="image")
         return MediaAsset(
             uri=output_path.as_uri(),
-            mime_type=f"image/{config.output_format}",
-            metadata={"mode": "local_command", "command": command},
+            mime_type=get_image_mime_type(config.output_format),
+            metadata={
+                "mode": "local_command",
+                "command": command,
+                "format": config.output_format,
+                "size_bytes": size_bytes,
+            },
         )
 
 
@@ -93,10 +108,17 @@ class LocalVideoCommandModel:
         )
         _run_command(command)
         _ensure_output_exists(output_path, command)
+        size_bytes = output_path.stat().st_size
+        validate_max_size(size_bytes, config.max_size_bytes, media_label="video")
         return MediaAsset(
             uri=output_path.as_uri(),
-            mime_type=f"video/{config.output_format}",
-            metadata={"mode": "local_command", "command": command},
+            mime_type=get_video_mime_type(config.output_format),
+            metadata={
+                "mode": "local_command",
+                "command": command,
+                "format": config.output_format,
+                "size_bytes": size_bytes,
+            },
         )
 
 

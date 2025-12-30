@@ -22,12 +22,17 @@ from ..characters.storage import CharacterRepository
 from ..media_generation.models import (
     CharacterProfile as MediaCharacterProfile,
     ImageGenerationConfig,
+    MAX_IMAGE_SIZE_BYTES,
+    MAX_VIDEO_SIZE_BYTES,
     MediaAsset,
     MediaResolution,
     PromptSpec,
     SceneSpec,
     StyleProfile,
     VideoGenerationConfig,
+    get_image_mime_type,
+    get_video_mime_type,
+    validate_max_size,
 )
 from ..media_generation.orchestrator import MediaGenerationOrchestrator
 from ..media_generation.local import CommandTemplate, LocalImageCommandModel, LocalVideoCommandModel
@@ -175,6 +180,7 @@ class ImageConfigPayload(BaseModel):
     guidance_scale: float = 7.5
     seed: int | None = None
     output_format: str = "png"
+    max_size_bytes: int | None = None
 
 
 class VideoConfigPayload(BaseModel):
@@ -184,6 +190,7 @@ class VideoConfigPayload(BaseModel):
     style: StyleProfilePayload | None = None
     seed: int | None = None
     output_format: str = "mp4"
+    max_size_bytes: int | None = None
 
 
 class RenderRequest(BaseModel):
@@ -243,10 +250,16 @@ class StubImageModel:
             f"Resolution: {config.resolution.width}x{config.resolution.height}\n"
         )
         path.write_text(contenu, encoding="utf-8")
+        size_bytes = path.stat().st_size
+        validate_max_size(size_bytes, config.max_size_bytes, media_label="image")
         return MediaAsset(
             uri=path.as_uri(),
-            mime_type=f"image/{config.output_format}",
-            metadata={"mode": "stub", "format": config.output_format},
+            mime_type=get_image_mime_type(config.output_format),
+            metadata={
+                "mode": "stub",
+                "format": config.output_format,
+                "size_bytes": size_bytes,
+            },
         )
 
 
@@ -271,10 +284,16 @@ class StubVideoModel:
             f"Duree: {config.duration_seconds}s\n"
         )
         path.write_text(contenu, encoding="utf-8")
+        size_bytes = path.stat().st_size
+        validate_max_size(size_bytes, config.max_size_bytes, media_label="video")
         return MediaAsset(
             uri=path.as_uri(),
-            mime_type=f"video/{config.output_format}",
-            metadata={"mode": "stub", "format": config.output_format},
+            mime_type=get_video_mime_type(config.output_format),
+            metadata={
+                "mode": "stub",
+                "format": config.output_format,
+                "size_bytes": size_bytes,
+            },
         )
 
 
@@ -634,6 +653,7 @@ def _build_image_config(payload: ImageConfigPayload) -> ImageGenerationConfig:
         guidance_scale=payload.guidance_scale,
         seed=payload.seed,
         output_format=payload.output_format,
+        max_size_bytes=payload.max_size_bytes or MAX_IMAGE_SIZE_BYTES,
     )
 
 
@@ -645,6 +665,7 @@ def _build_video_config(payload: VideoConfigPayload) -> VideoGenerationConfig:
         style=_build_style(payload.style),
         seed=payload.seed,
         output_format=payload.output_format,
+        max_size_bytes=payload.max_size_bytes or MAX_VIDEO_SIZE_BYTES,
     )
 
 

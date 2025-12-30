@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Mapping
 
 from .interfaces import ImageModel, PromptRenderer, VideoModel
@@ -45,7 +46,8 @@ class MediaGenerationOrchestrator:
 
         model = self._get_image_model(model_name)
         rendered_prompt = self.prompt_renderer.render(scene, prompt)
-        return model.generate(scene=scene, prompt=rendered_prompt, config=config)
+        asset = model.generate(scene=scene, prompt=rendered_prompt, config=config)
+        return self._enrich_asset_metadata(asset, source=model_name, version=prompt.version)
 
     def generate_video(
         self,
@@ -59,7 +61,8 @@ class MediaGenerationOrchestrator:
 
         model = self._get_video_model(model_name)
         rendered_prompt = self.prompt_renderer.render(scene, prompt)
-        return model.generate(scene=scene, prompt=rendered_prompt, config=config)
+        asset = model.generate(scene=scene, prompt=rendered_prompt, config=config)
+        return self._enrich_asset_metadata(asset, source=model_name, version=prompt.version)
 
     def _get_image_model(self, model_name: str) -> ImageModel:
         if model_name not in self.image_models:
@@ -76,3 +79,18 @@ class MediaGenerationOrchestrator:
                 f"Disponibles: {sorted(self.video_models)}"
             )
         return self.video_models[model_name]
+
+    def _enrich_asset_metadata(
+        self,
+        asset: MediaAsset,
+        *,
+        source: str,
+        version: str | None,
+    ) -> MediaAsset:
+        metadata = {
+            **asset.metadata,
+            "date": datetime.utcnow().isoformat(),
+            "source": source,
+            "version": version,
+        }
+        return MediaAsset(uri=asset.uri, mime_type=asset.mime_type, metadata=metadata)
