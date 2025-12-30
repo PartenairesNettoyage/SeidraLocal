@@ -20,9 +20,11 @@ from .models import (
 class CharacterRepository:
     def __init__(self, base_path: Path | None = None) -> None:
         if base_path is None:
-            base_path = Path(__file__).resolve().parents[2] / "data" / "characters"
-        self.base_path = base_path
-        self.base_path.mkdir(parents=True, exist_ok=True)
+            base_path = Path(__file__).resolve().parents[2] / "data"
+        self.store_path = _resolve_store_path(base_path, "characters.json")
+        self.store_path.parent.mkdir(parents=True, exist_ok=True)
+        self._cache: dict[str, dict[str, object]] = {}
+        self._charger()
 
     def creer(self, profil: CharacterProfile, *, traits: CharacterTraits | None = None,
               historique: CharacterHistory | None = None,
@@ -39,13 +41,13 @@ class CharacterRepository:
         return character
 
     def lire(self, identifiant: str) -> Character:
-        chemin = self._chemin_latest(identifiant)
-        if not chemin.exists():
+        payload = self._cache.get(identifiant)
+        if payload is None:
             raise FileNotFoundError(f"Personnage introuvable: {identifiant}")
-        return self._charger_depuis_fichier(chemin)
+        return _character_from_dict(payload)
 
     def mettre_a_jour(self, character: Character) -> Character:
-        if not self._chemin_personnage(character.identifiant).exists():
+        if character.identifiant not in self._cache:
             raise FileNotFoundError(
                 f"Impossible de mettre à jour un personnage inexistant: {character.identifiant}"
             )
@@ -54,46 +56,38 @@ class CharacterRepository:
         return character
 
     def supprimer(self, identifiant: str) -> None:
-        dossier = self._chemin_personnage(identifiant)
-        if not dossier.exists():
+        if identifiant not in self._cache:
             raise FileNotFoundError(f"Personnage introuvable: {identifiant}")
-        for chemin in dossier.rglob("*"):
-            if chemin.is_file():
-                chemin.unlink()
-        for chemin in sorted(dossier.rglob("*"), reverse=True):
-            if chemin.is_dir():
-                chemin.rmdir()
-        dossier.rmdir()
+        del self._cache[identifiant]
+        self._sauvegarder()
 
     def lister(self) -> Iterable[Character]:
-        for dossier in sorted(self.base_path.iterdir()):
-            if dossier.is_dir():
-                latest = dossier / "latest.json"
-                if latest.exists():
-                    yield self._charger_depuis_fichier(latest)
+        for payload in self._cache.values():
+            yield _character_from_dict(payload)
 
     def _enregistrer(self, character: Character) -> None:
-        dossier = self._chemin_personnage(character.identifiant)
-        versions = dossier / "versions"
-        versions.mkdir(parents=True, exist_ok=True)
-
-        horodatage = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-        version_path = versions / f"{horodatage}.json"
-        latest_path = dossier / "latest.json"
-
         payload = _character_to_dict(character)
-        version_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        latest_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        self._cache[character.identifiant] = payload
+        self._sauvegarder()
 
-    def _chemin_personnage(self, identifiant: str) -> Path:
-        return self.base_path / identifiant
+    def _charger(self) -> None:
+        if not self.store_path.exists():
+            self._cache = {}
+            return
+        contenu = json.loads(self.store_path.read_text(encoding="utf-8"))
+        if isinstance(contenu, dict):
+            items = contenu.get("items", contenu)
+            if isinstance(items, dict):
+                self._cache = dict(items)
+                return
+        self._cache = {}
 
-    def _chemin_latest(self, identifiant: str) -> Path:
-        return self._chemin_personnage(identifiant) / "latest.json"
-
-    def _charger_depuis_fichier(self, chemin: Path) -> Character:
-        contenu = json.loads(chemin.read_text(encoding="utf-8"))
-        return _character_from_dict(contenu)
+    def _sauvegarder(self) -> None:
+        payload = {"items": self._cache}
+        self.store_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
 
 def _character_to_dict(character: Character) -> dict[str, object]:
@@ -119,3 +113,9 @@ def _character_from_dict(data: dict[str, object]) -> Character:
         modifie_le=data.get("modifie_le", datetime.utcnow().isoformat()),
         version_schema=data.get("version_schema", 1),
     )
+
+
+def _resolve_store_path(base_path: Path, filename: str) -> Path:
+    if base_path.suffix == ".json":
+        return base_path
+    return base_path / filename
