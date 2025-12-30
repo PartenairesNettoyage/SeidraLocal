@@ -37,6 +37,8 @@ DEFAULT_MODEL_NAME = os.getenv("SEIDRA_DEFAULT_MODEL_NAME", "stub")
 LOCAL_IMAGE_COMMAND = os.getenv("SEIDRA_LOCAL_IMAGE_COMMAND")
 LOCAL_VIDEO_COMMAND = os.getenv("SEIDRA_LOCAL_VIDEO_COMMAND")
 ARTIFACTS_DIR = Path(os.getenv("SEIDRA_ARTIFACTS_DIR", "data/artifacts"))
+CHARACTERS_STORE_PATH = Path(os.getenv("SEIDRA_CHARACTERS_STORE", "data/characters.json"))
+RENDERS_STORE_PATH = Path(os.getenv("SEIDRA_RENDERS_STORE", "data/renders.json"))
 
 
 class CharacterProfilePayload(BaseModel):
@@ -227,8 +229,8 @@ class StubVideoModel:
 
 
 app = FastAPI(title="SeidraLocal API", version="0.1.0")
-character_repo = CharacterRepository()
-render_repo = RenderRepository()
+character_repo = CharacterRepository(CHARACTERS_STORE_PATH)
+render_repo = RenderRepository(RENDERS_STORE_PATH)
 
 orchestrator = MediaGenerationOrchestrator(prompt_renderer=BasicPromptRenderer())
 asset_base_path = Path(__file__).resolve().parents[2] / ARTIFACTS_DIR
