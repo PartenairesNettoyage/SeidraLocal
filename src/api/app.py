@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import asdict
+from datetime import datetime
 import os
 from pathlib import Path
 from typing import Any, Literal
@@ -18,7 +19,14 @@ from ..characters.models import (
     CharacterState,
     CharacterTraits,
 )
-from ..characters.storage import CharacterRepository
+from ..characters.storage import (
+    CharacterRepository,
+    create_character,
+    delete_character,
+    get_character,
+    list_characters,
+    update_character,
+)
 from ..media_generation.models import (
     CharacterProfile as MediaCharacterProfile,
     ImageGenerationConfig,
@@ -41,7 +49,14 @@ from ..scenarios.models import Acte, Scene, Scenario
 from ..scenarios.storage import ScenarioRepository
 
 from .models import RenderAsset, RenderJob
-from .storage import RenderRepository
+from .storage import (
+    RenderRepository,
+    create_render,
+    delete_render,
+    get_render,
+    list_renders,
+    update_render,
+)
 
 DEFAULT_MODEL_NAME = os.getenv("SEIDRA_DEFAULT_MODEL_NAME", "stub")
 LOCAL_IMAGE_COMMAND = os.getenv("SEIDRA_LOCAL_IMAGE_COMMAND")
@@ -350,6 +365,33 @@ class RenderResponse(BaseModel):
     termine_le: str | None
 
 
+class RenderAssetPayload(BaseModel):
+    uri: str = Field(..., min_length=1)
+    mime_type: str = Field(..., min_length=1)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("uri", "mime_type")
+    @classmethod
+    def valider_champs_requis(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("doit être renseigné")
+        return value
+
+
+class RenderUpdateRequest(BaseModel):
+    statut: str | None = None
+    asset: RenderAssetPayload | None = None
+
+    @field_validator("statut")
+    @classmethod
+    def valider_statut(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        if not value.strip():
+            raise ValueError("doit être renseigné")
+        return value
+
+
 class BasicPromptRenderer:
     def render(self, scene: SceneSpec, prompt: PromptSpec) -> str:
         variables = defaultdict(
@@ -466,7 +508,8 @@ def creer_personnage(payload: CharacterCreateRequest) -> dict[str, Any]:
     traits = CharacterTraits(**payload.traits.model_dump()) if payload.traits else None
     historique = _build_character_history(payload.historique) if payload.historique else None
     etat = CharacterState(**payload.etat.model_dump()) if payload.etat else None
-    character = character_repo.creer(
+    character = create_character(
+        character_repo,
         profil,
         traits=traits,
         historique=historique,
@@ -477,13 +520,13 @@ def creer_personnage(payload: CharacterCreateRequest) -> dict[str, Any]:
 
 @app.get("/characters")
 def lister_personnages() -> list[dict[str, Any]]:
-    return [_character_to_payload(character) for character in character_repo.lister()]
+    return [_character_to_payload(character) for character in list_characters(character_repo)]
 
 
 @app.get("/characters/{identifiant}")
 def lire_personnage(identifiant: str) -> dict[str, Any]:
     try:
-        character = character_repo.lire(identifiant)
+        character = get_character(character_repo, identifiant)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return _character_to_payload(character)
@@ -492,7 +535,7 @@ def lire_personnage(identifiant: str) -> dict[str, Any]:
 @app.put("/characters/{identifiant}")
 def remplacer_personnage(identifiant: str, payload: CharacterCreateRequest) -> dict[str, Any]:
     try:
-        character = character_repo.lire(identifiant)
+        character = get_character(character_repo, identifiant)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -506,7 +549,7 @@ def remplacer_personnage(identifiant: str, payload: CharacterCreateRequest) -> d
         modifie_le=character.modifie_le,
         version_schema=character.version_schema,
     )
-    character_mis_a_jour = character_repo.mettre_a_jour(character_mis_a_jour)
+    character_mis_a_jour = update_character(character_repo, character_mis_a_jour)
     return _character_to_payload(character_mis_a_jour)
 
 
@@ -516,7 +559,7 @@ def mettre_a_jour_personnage(
     payload: CharacterUpdateRequest,
 ) -> dict[str, Any]:
     try:
-        character = character_repo.lire(identifiant)
+        character = get_character(character_repo, identifiant)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -546,14 +589,14 @@ def mettre_a_jour_personnage(
         modifie_le=character.modifie_le,
         version_schema=character.version_schema,
     )
-    character_mis_a_jour = character_repo.mettre_a_jour(character_mis_a_jour)
+    character_mis_a_jour = update_character(character_repo, character_mis_a_jour)
     return _character_to_payload(character_mis_a_jour)
 
 
 @app.delete("/characters/{identifiant}", status_code=204)
 def supprimer_personnage(identifiant: str) -> None:
     try:
-        character_repo.supprimer(identifiant)
+        delete_character(character_repo, identifiant)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -677,7 +720,8 @@ def lancer_rendu(payload: RenderRequest) -> RenderResponse:
 
     scene = _build_scene(payload.scene)
     prompt = _build_prompt(payload.prompt)
-    rendu = render_repo.creer(
+    rendu = create_render(
+        render_repo,
         type_rendu=payload.type,
         scene=payload.scene.model_dump(),
         prompt=payload.prompt.model_dump(),
@@ -704,22 +748,59 @@ def lancer_rendu(payload: RenderRequest) -> RenderResponse:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     rendu_termine = rendu.terminer(_media_asset_to_render_asset(asset))
-    render_repo.mettre_a_jour(rendu_termine)
+    update_render(render_repo, rendu_termine)
     return _render_to_response(rendu_termine)
 
 
 @app.get("/renders")
 def lister_rendus() -> list[RenderResponse]:
-    return [_render_to_response(rendu) for rendu in render_repo.lister()]
+    return [_render_to_response(rendu) for rendu in list_renders(render_repo)]
 
 
 @app.get("/renders/{identifiant}")
 def lire_rendu(identifiant: str) -> RenderResponse:
     try:
-        rendu = render_repo.lire(identifiant)
+        rendu = get_render(render_repo, identifiant)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return _render_to_response(rendu)
+
+
+@app.patch("/renders/{identifiant}", response_model=RenderResponse)
+def mettre_a_jour_rendu(identifiant: str, payload: RenderUpdateRequest) -> RenderResponse:
+    try:
+        rendu = get_render(render_repo, identifiant)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    asset = RenderAsset(**payload.asset.model_dump()) if payload.asset else rendu.asset
+    statut = payload.statut if payload.statut is not None else rendu.statut
+    termine_le = rendu.termine_le
+    if payload.statut == "termine" and termine_le is None:
+        termine_le = datetime.utcnow().isoformat()
+
+    rendu_mis_a_jour = RenderJob(
+        identifiant=rendu.identifiant,
+        type_rendu=rendu.type_rendu,
+        scene=rendu.scene,
+        prompt=rendu.prompt,
+        configuration=rendu.configuration,
+        modele=rendu.modele,
+        statut=statut,
+        asset=asset,
+        cree_le=rendu.cree_le,
+        termine_le=termine_le,
+    )
+    rendu_mis_a_jour = update_render(render_repo, rendu_mis_a_jour)
+    return _render_to_response(rendu_mis_a_jour)
+
+
+@app.delete("/renders/{identifiant}", status_code=204)
+def supprimer_rendu(identifiant: str) -> None:
+    try:
+        delete_render(render_repo, identifiant)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 def _character_to_payload(character: Any) -> dict[str, Any]:
@@ -835,7 +916,7 @@ def _verifier_coherence_scenario(scenario: Scenario) -> None:
         for scene in acte.scenes:
             for identifiant in scene.personnages_ids:
                 try:
-                    character_repo.lire(identifiant)
+                    get_character(character_repo, identifiant)
                 except FileNotFoundError as exc:
                     raise HTTPException(
                         status_code=400,

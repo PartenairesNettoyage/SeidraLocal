@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
 from typing import Iterable
 from uuid import uuid4
@@ -48,6 +49,12 @@ class RenderRepository:
     def lister(self) -> Iterable[RenderJob]:
         for payload in self._cache.values():
             yield _rendu_from_dict(payload)
+
+    def supprimer(self, identifiant: str) -> None:
+        if identifiant not in self._cache:
+            raise FileNotFoundError(f"Rendu introuvable: {identifiant}")
+        del self._cache[identifiant]
+        self._sauvegarder()
 
     def _enregistrer(self, rendu: RenderJob) -> None:
         payload = _rendu_to_dict(rendu)
@@ -99,3 +106,37 @@ def _resolve_store_path(base_path: Path, filename: str) -> Path:
     if base_path.suffix == ".json":
         return base_path
     return base_path / filename
+
+
+def create_render(
+    repository: RenderRepository,
+    *,
+    type_rendu: str,
+    scene: dict[str, object],
+    prompt: dict[str, object],
+    configuration: dict[str, object],
+    modele: str,
+) -> RenderJob:
+    return repository.creer(
+        type_rendu=type_rendu,
+        scene=scene,
+        prompt=prompt,
+        configuration=configuration,
+        modele=modele,
+    )
+
+
+def get_render(repository: RenderRepository, identifiant: str) -> RenderJob:
+    return repository.lire(identifiant)
+
+
+def list_renders(repository: RenderRepository) -> Iterable[RenderJob]:
+    return repository.lister()
+
+
+def update_render(repository: RenderRepository, rendu: RenderJob) -> RenderJob:
+    return repository.mettre_a_jour(rendu)
+
+
+def delete_render(repository: RenderRepository, identifiant: str) -> None:
+    repository.supprimer(identifiant)

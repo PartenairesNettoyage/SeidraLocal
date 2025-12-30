@@ -119,3 +119,35 @@ def _resolve_store_path(base_path: Path, filename: str) -> Path:
     if base_path.suffix == ".json":
         return base_path
     return base_path / filename
+
+
+def create_character(
+    repository: CharacterRepository,
+    profil: CharacterProfile,
+    *,
+    traits: CharacterTraits | None = None,
+    historique: CharacterHistory | None = None,
+    etat: CharacterState | None = None,
+) -> Character:
+    return repository.creer(
+        profil,
+        traits=traits,
+        historique=historique,
+        etat=etat,
+    )
+
+
+def get_character(repository: CharacterRepository, identifiant: str) -> Character:
+    return repository.lire(identifiant)
+
+
+def list_characters(repository: CharacterRepository) -> Iterable[Character]:
+    return repository.lister()
+
+
+def update_character(repository: CharacterRepository, character: Character) -> Character:
+    return repository.mettre_a_jour(character)
+
+
+def delete_character(repository: CharacterRepository, identifiant: str) -> None:
+    repository.supprimer(identifiant)
