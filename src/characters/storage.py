@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable
@@ -91,18 +90,21 @@ class CharacterRepository:
 
 
 def _character_to_dict(character: Character) -> dict[str, object]:
-    return asdict(character)
+    return character.model_dump()
 
 
 def _character_from_dict(data: dict[str, object]) -> Character:
-    profil = CharacterProfile(**data["profil"])
-    traits = CharacterTraits(**data.get("traits", {}))
+    profil = CharacterProfile.model_validate(data["profil"])
+    traits = CharacterTraits.model_validate(data.get("traits", {}))
     historique_data = data.get("historique", {})
     historique = CharacterHistory(
-        evenements=[CharacterHistoryEntry(**entry) for entry in historique_data.get("evenements", [])]
+        evenements=[
+            CharacterHistoryEntry.model_validate(entry)
+            for entry in historique_data.get("evenements", [])
+        ]
     )
     etat_data = data.get("etat")
-    etat = CharacterState(**etat_data) if etat_data else None
+    etat = CharacterState.model_validate(etat_data) if etat_data else None
     return Character(
         identifiant=data["identifiant"],
         profil=profil,

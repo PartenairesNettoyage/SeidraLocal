@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from dataclasses import asdict
 from pathlib import Path
 from typing import Iterable
@@ -75,12 +76,12 @@ class RenderRepository:
 
 
 def _rendu_to_dict(rendu: RenderJob) -> dict[str, object]:
-    return asdict(rendu)
+    return rendu.model_dump()
 
 
 def _rendu_from_dict(data: dict[str, object]) -> RenderJob:
     asset_data = data.get("asset")
-    asset = RenderAsset(**asset_data) if asset_data else None
+    asset = RenderAsset.model_validate(asset_data) if asset_data else None
     return RenderJob(
         identifiant=data["identifiant"],
         type_rendu=data["type_rendu"],

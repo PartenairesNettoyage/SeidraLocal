@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import asdict
 import os
 from pathlib import Path
 from typing import Any, Literal
@@ -10,6 +9,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from ..characters.models import (
+    Character,
     CharacterHistory,
     CharacterHistoryEntry,
     CharacterProfile,
@@ -73,6 +73,13 @@ class CharacterStatePayload(BaseModel):
 
 class CharacterCreateRequest(BaseModel):
     profil: CharacterProfilePayload
+    traits: CharacterTraitsPayload | None = None
+    historique: CharacterHistoryPayload | None = None
+    etat: CharacterStatePayload | None = None
+
+
+class CharacterUpdateRequest(BaseModel):
+    profil: CharacterProfilePayload | None = None
     traits: CharacterTraitsPayload | None = None
     historique: CharacterHistoryPayload | None = None
     etat: CharacterStatePayload | None = None
@@ -249,19 +256,10 @@ if LOCAL_VIDEO_COMMAND:
 
 @app.post("/characters", status_code=201)
 def creer_personnage(payload: CharacterCreateRequest) -> dict[str, Any]:
-    profil = CharacterProfile(**payload.profil.model_dump())
-    traits = CharacterTraits(**payload.traits.model_dump()) if payload.traits else None
-    historique = (
-        CharacterHistory(
-            evenements=[
-                CharacterHistoryEntry(**entry.model_dump())
-                for entry in payload.historique.evenements
-            ]
-        )
-        if payload.historique
-        else None
-    )
-    etat = CharacterState(**payload.etat.model_dump()) if payload.etat else None
+    profil = _build_character_profile(payload.profil)
+    traits = _build_character_traits(payload.traits) or CharacterTraits()
+    historique = _build_character_history(payload.historique) or CharacterHistory()
+    etat = _build_character_state(payload.etat)
     character = character_repo.creer(
         profil,
         traits=traits,
@@ -283,6 +281,71 @@ def lire_personnage(identifiant: str) -> dict[str, Any]:
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return _character_to_payload(character)
+
+
+@app.put("/characters/{identifiant}")
+def remplacer_personnage(
+    identifiant: str,
+    payload: CharacterCreateRequest,
+) -> dict[str, Any]:
+    try:
+        existing = character_repo.lire(identifiant)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    profil = _build_character_profile(payload.profil)
+    traits = _build_character_traits(payload.traits) or CharacterTraits()
+    historique = _build_character_history(payload.historique) or CharacterHistory()
+    etat = _build_character_state(payload.etat)
+    character = Character(
+        identifiant=existing.identifiant,
+        profil=profil,
+        traits=traits,
+        historique=historique,
+        etat=etat,
+        cree_le=existing.cree_le,
+        modifie_le=existing.modifie_le,
+        version_schema=existing.version_schema,
+    )
+    return _character_to_payload(character_repo.mettre_a_jour(character))
+
+
+@app.patch("/characters/{identifiant}")
+def mettre_a_jour_personnage(
+    identifiant: str,
+    payload: CharacterUpdateRequest,
+) -> dict[str, Any]:
+    try:
+        existing = character_repo.lire(identifiant)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    profil = _build_character_profile(payload.profil) if payload.profil else existing.profil
+    traits = _build_character_traits(payload.traits) if payload.traits else existing.traits
+    historique = (
+        _build_character_history(payload.historique)
+        if payload.historique
+        else existing.historique
+    )
+    etat = _build_character_state(payload.etat) if payload.etat else existing.etat
+    character = Character(
+        identifiant=existing.identifiant,
+        profil=profil,
+        traits=traits,
+        historique=historique,
+        etat=etat,
+        cree_le=existing.cree_le,
+        modifie_le=existing.modifie_le,
+        version_schema=existing.version_schema,
+    )
+    return _character_to_payload(character_repo.mettre_a_jour(character))
+
+
+@app.delete("/characters/{identifiant}", status_code=204)
+def supprimer_personnage(identifiant: str) -> None:
+    try:
+        character_repo.supprimer(identifiant)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return None
 
 
 @app.post("/renders", response_model=RenderResponse, status_code=201)
@@ -344,7 +407,31 @@ def lire_rendu(identifiant: str) -> RenderResponse:
 
 
 def _character_to_payload(character: Any) -> dict[str, Any]:
-    return asdict(character)
+    return character.model_dump()
+
+
+def _build_character_profile(payload: CharacterProfilePayload) -> CharacterProfile:
+    return CharacterProfile(**payload.model_dump())
+
+
+def _build_character_traits(payload: CharacterTraitsPayload | None) -> CharacterTraits | None:
+    if payload is None:
+        return None
+    return CharacterTraits(**payload.model_dump())
+
+
+def _build_character_history(payload: CharacterHistoryPayload | None) -> CharacterHistory | None:
+    if payload is None:
+        return None
+    return CharacterHistory(
+        evenements=[CharacterHistoryEntry(**entry.model_dump()) for entry in payload.evenements]
+    )
+
+
+def _build_character_state(payload: CharacterStatePayload | None) -> CharacterState | None:
+    if payload is None:
+        return None
+    return CharacterState(**payload.model_dump())
 
 
 def _build_scene(payload: ScenePayload) -> SceneSpec:
@@ -397,7 +484,7 @@ def _media_asset_to_render_asset(asset: MediaAsset) -> RenderAsset:
 
 
 def _render_to_response(rendu: RenderJob) -> RenderResponse:
-    asset_payload = asdict(rendu.asset) if rendu.asset else None
+    asset_payload = rendu.asset.model_dump() if rendu.asset else None
     return RenderResponse(
         identifiant=rendu.identifiant,
         type_rendu=rendu.type_rendu,

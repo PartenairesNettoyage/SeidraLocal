@@ -1,64 +1,56 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field
 
-@dataclass(frozen=True)
-class CharacterProfile:
+
+class CharacterProfile(BaseModel):
+    model_config = ConfigDict(frozen=True)
     nom: str
     description: str
     voix_narrative: str | None = None
-    metadonnees: dict[str, Any] = field(default_factory=dict)
+    metadonnees: dict[str, Any] = Field(default_factory=dict)
 
 
-@dataclass(frozen=True)
-class CharacterTraits:
-    traits: list[str] = field(default_factory=list)
-    relations: list[str] = field(default_factory=list)
-    tags: list[str] = field(default_factory=list)
+class CharacterTraits(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    traits: list[str] = Field(default_factory=list)
+    relations: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
 
 
-@dataclass(frozen=True)
-class CharacterHistoryEntry:
+class CharacterHistoryEntry(BaseModel):
+    model_config = ConfigDict(frozen=True)
     titre: str
     contenu: str
     date: str | None = None
 
 
-@dataclass(frozen=True)
-class CharacterHistory:
-    evenements: list[CharacterHistoryEntry] = field(default_factory=list)
+class CharacterHistory(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    evenements: list[CharacterHistoryEntry] = Field(default_factory=list)
 
 
-@dataclass(frozen=True)
-class CharacterState:
+class CharacterState(BaseModel):
+    model_config = ConfigDict(frozen=True)
     statut: str
     localisation: str | None = None
     etat_emotionnel: str | None = None
-    variables: dict[str, Any] = field(default_factory=dict)
+    variables: dict[str, Any] = Field(default_factory=dict)
 
 
-@dataclass(frozen=True)
-class Character:
+class Character(BaseModel):
+    model_config = ConfigDict(frozen=True)
     identifiant: str
     profil: CharacterProfile
-    traits: CharacterTraits = field(default_factory=CharacterTraits)
-    historique: CharacterHistory = field(default_factory=CharacterHistory)
+    traits: CharacterTraits = Field(default_factory=CharacterTraits)
+    historique: CharacterHistory = Field(default_factory=CharacterHistory)
     etat: CharacterState | None = None
-    cree_le: str = field(default_factory=lambda: datetime.utcnow().isoformat())
-    modifie_le: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    cree_le: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    modifie_le: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
     version_schema: int = 1
 
     def mettre_a_jour_timestamp(self) -> "Character":
-        return Character(
-            identifiant=self.identifiant,
-            profil=self.profil,
-            traits=self.traits,
-            historique=self.historique,
-            etat=self.etat,
-            cree_le=self.cree_le,
-            modifie_le=datetime.utcnow().isoformat(),
-            version_schema=self.version_schema,
-        )
+        return self.model_copy(update={"modifie_le": datetime.utcnow().isoformat()})
