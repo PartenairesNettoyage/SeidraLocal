@@ -29,6 +29,7 @@ from ..media_generation.models import (
 )
 from ..media_generation.orchestrator import MediaGenerationOrchestrator
 from ..media_generation.local import CommandTemplate, LocalImageCommandModel, LocalVideoCommandModel
+from ..prompts.storage import PromptRepository
 
 from .models import RenderAsset, RenderJob
 from .storage import RenderRepository
@@ -39,6 +40,7 @@ LOCAL_VIDEO_COMMAND = os.getenv("SEIDRA_LOCAL_VIDEO_COMMAND")
 ARTIFACTS_DIR = Path(os.getenv("SEIDRA_ARTIFACTS_DIR", "data/artifacts"))
 CHARACTERS_STORE_PATH = Path(os.getenv("SEIDRA_CHARACTERS_STORE", "data/characters.json"))
 RENDERS_STORE_PATH = Path(os.getenv("SEIDRA_RENDERS_STORE", "data/renders.json"))
+PROMPTS_STORE_PATH = Path(os.getenv("SEIDRA_PROMPTS_STORE", "data/prompts.json"))
 
 
 class CharacterProfilePayload(BaseModel):
@@ -90,6 +92,22 @@ class PromptPayload(BaseModel):
     template: str
     variables: dict[str, Any] = Field(default_factory=dict)
     version: str | None = None
+
+
+class PromptCreateRequest(BaseModel):
+    nom: str
+    template: str
+    variables: dict[str, Any] = Field(default_factory=dict)
+
+
+class PromptUpdateRequest(BaseModel):
+    template: str
+    variables: dict[str, Any] = Field(default_factory=dict)
+
+
+class PromptExecutionRequest(BaseModel):
+    version: int | None = None
+    contexte: dict[str, Any] = Field(default_factory=dict)
 
 
 class StyleProfilePayload(BaseModel):
@@ -224,6 +242,7 @@ class StubVideoModel:
 app = FastAPI(title="SeidraLocal API", version="0.1.0")
 character_repo = CharacterRepository(CHARACTERS_STORE_PATH)
 render_repo = RenderRepository(RENDERS_STORE_PATH)
+prompt_repo = PromptRepository(PROMPTS_STORE_PATH)
 
 orchestrator = MediaGenerationOrchestrator(prompt_renderer=BasicPromptRenderer())
 asset_base_path = Path(__file__).resolve().parents[2] / ARTIFACTS_DIR
@@ -283,6 +302,66 @@ def lire_personnage(identifiant: str) -> dict[str, Any]:
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return _character_to_payload(character)
+
+
+@app.post("/prompts", status_code=201)
+def creer_prompt(payload: PromptCreateRequest) -> dict[str, Any]:
+    try:
+        prompt = prompt_repo.creer(
+            payload.nom,
+            template=payload.template,
+            variables=payload.variables,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _prompt_to_payload(prompt)
+
+
+@app.get("/prompts")
+def lister_prompts() -> list[dict[str, Any]]:
+    return [_prompt_to_payload(prompt) for prompt in prompt_repo.lister()]
+
+
+@app.get("/prompts/{identifiant}")
+def lire_prompt(identifiant: str) -> dict[str, Any]:
+    try:
+        prompt = prompt_repo.lire(identifiant)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _prompt_to_payload(prompt)
+
+
+@app.put("/prompts/{identifiant}")
+def mettre_a_jour_prompt(identifiant: str, payload: PromptUpdateRequest) -> dict[str, Any]:
+    try:
+        prompt = prompt_repo.mettre_a_jour(
+            identifiant,
+            template=payload.template,
+            variables=payload.variables,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _prompt_to_payload(prompt)
+
+
+@app.post("/prompts/{identifiant}/executions", status_code=201)
+def enregistrer_execution_prompt(
+    identifiant: str,
+    payload: PromptExecutionRequest,
+) -> dict[str, Any]:
+    try:
+        execution = prompt_repo.enregistrer_execution(
+            identifiant,
+            version=payload.version,
+            contexte=payload.contexte,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return asdict(execution)
 
 
 @app.post("/renders", response_model=RenderResponse, status_code=201)
@@ -345,6 +424,10 @@ def lire_rendu(identifiant: str) -> RenderResponse:
 
 def _character_to_payload(character: Any) -> dict[str, Any]:
     return asdict(character)
+
+
+def _prompt_to_payload(prompt: Any) -> dict[str, Any]:
+    return asdict(prompt)
 
 
 def _build_scene(payload: ScenePayload) -> SceneSpec:
